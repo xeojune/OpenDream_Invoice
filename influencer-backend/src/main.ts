@@ -3,15 +3,15 @@ import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  
+
   // Enable CORS
   app.enableCors({
-    origin: 'http://localhost:5173', // Your Vite frontend URL
-    methods: ['GET', 'POST'],
-    allowedHeaders: ['Content-Type'],
+    origin: 'https://internal-invocie.opendreamcorp.com', // Your Vite frontend URL
+    methods: ['*'],
+    allowedHeaders: ['*'],
     credentials: true,
   });
-  
-  await app.listen(process.env.PORT ?? 3000);
+
+  await app.listen(8000);
 }
 bootstrap();
