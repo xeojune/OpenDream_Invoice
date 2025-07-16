@@ -1,10 +1,12 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import * as archiver from 'archiver';
 import * as ExcelJS from 'exceljs';
 import * as fs from 'fs';
+
+import { Injectable, InternalServerErrorException } from '@nestjs/common';
+
 import { exec } from 'child_process';
 import { join } from 'path';
 import { v4 as uuid } from 'uuid';
-import * as archiver from 'archiver';
 
 @Injectable()
 export class InvoiceService {
@@ -14,7 +16,7 @@ export class InvoiceService {
   constructor() {
     this.assetsDir = join(process.cwd(), 'assets');
     this.tmpDir = join(process.cwd(), 'tmp');
-    
+
     // Create directories if they don't exist
     if (!fs.existsSync(this.assetsDir)) {
       fs.mkdirSync(this.assetsDir, { recursive: true });
@@ -32,31 +34,34 @@ export class InvoiceService {
 
     const generatedFiles: { path: string; name: string }[] = [];
     const errors: { invoiceNum: string; error: string }[] = [];
-    
+
     try {
       // Process PDFs sequentially to avoid LibreOffice conflicts
-      type PdfResult = 
+      type PdfResult =
         | { success: true; file: { path: string; name: string } }
         | { success: false; invoiceNum: string };
-        
+
       const pdfFiles: PdfResult[] = [];
-      
+
       for (const data of invoicesData) {
         try {
           // Add a small delay between conversions
           if (pdfFiles.length > 0) {
-            await new Promise(resolve => setTimeout(resolve, 500));
+            await new Promise((resolve) => setTimeout(resolve, 500));
           }
-          
+
           const pdfPath = await this.fillTemplateAndExportPDF(data);
           const file = { path: pdfPath, name: `${data.invoiceNum}.pdf` };
           generatedFiles.push(file);
           pdfFiles.push({ success: true, file });
         } catch (error) {
-          console.error(`Failed to generate PDF for invoice ${data.invoiceNum}:`, error);
-          errors.push({ 
-            invoiceNum: data.invoiceNum, 
-            error: error.message || 'Unknown error'
+          console.error(
+            `Failed to generate PDF for invoice ${data.invoiceNum}:`,
+            error,
+          );
+          errors.push({
+            invoiceNum: data.invoiceNum,
+            error: error.message || 'Unknown error',
           });
           pdfFiles.push({ success: false, invoiceNum: data.invoiceNum });
         }
@@ -64,14 +69,21 @@ export class InvoiceService {
 
       // Filter out successful PDF generations
       const successfulPdfs = pdfFiles
-        .filter((result): result is { success: true; file: { path: string; name: string } } => 
-          result.success
+        .filter(
+          (
+            result,
+          ): result is {
+            success: true;
+            file: { path: string; name: string };
+          } => result.success,
         )
-        .map(result => result.file);
+        .map((result) => result.file);
 
       if (successfulPdfs.length === 0) {
-        throw new Error('No PDFs were successfully generated. Errors: ' + 
-          JSON.stringify(errors, null, 2));
+        throw new Error(
+          'No PDFs were successfully generated. Errors: ' +
+            JSON.stringify(errors, null, 2),
+        );
       }
 
       // Create and return the zip file
@@ -80,18 +92,18 @@ export class InvoiceService {
           // Create a write stream for the zip file
           const output = fs.createWriteStream(zipFilePath);
           const archive = archiver('zip', {
-            zlib: { level: 9 } // Maximum compression
+            zlib: { level: 9 }, // Maximum compression
           });
 
           // Listen for all archive data to be written
           output.on('close', () => {
             this.cleanupFiles(generatedFiles);
-            
+
             // If there were some failures but some successes, resolve with a warning
             if (errors.length > 0) {
               console.warn('Some PDFs failed to generate:', errors);
             }
-            
+
             resolve(zipFilePath);
           });
 
@@ -120,7 +132,7 @@ export class InvoiceService {
           archive.pipe(output);
 
           // Add the PDF files to the archive
-          successfulPdfs.forEach(file => {
+          successfulPdfs.forEach((file) => {
             if (fs.existsSync(file.path)) {
               archive.file(file.path, { name: file.name });
             } else {
@@ -130,8 +142,9 @@ export class InvoiceService {
 
           // Add a report of failed PDFs if any
           if (errors.length > 0) {
-            const errorReport = 'Failed to generate the following PDFs:\n' +
-              errors.map(e => `${e.invoiceNum}: ${e.error}`).join('\n');
+            const errorReport =
+              'Failed to generate the following PDFs:\n' +
+              errors.map((e) => `${e.invoiceNum}: ${e.error}`).join('\n');
             archive.append(errorReport, { name: '_errors.txt' });
           }
 
@@ -156,7 +169,7 @@ export class InvoiceService {
   }
 
   private cleanupFiles(files: { path: string }[]): void {
-    files.forEach(file => {
+    files.forEach((file) => {
       try {
         if (fs.existsSync(file.path)) {
           fs.unlinkSync(file.path);
@@ -170,10 +183,12 @@ export class InvoiceService {
   async fillTemplateAndExportPDF(data: any): Promise<string> {
     try {
       const templatePath = join(this.assetsDir, 'Invoice.xlsx');
-      
+
       // Check if template exists
       if (!fs.existsSync(templatePath)) {
-        throw new Error('Invoice template not found. Please ensure Invoice.xlsx exists in the assets directory.');
+        throw new Error(
+          'Invoice template not found. Please ensure Invoice.xlsx exists in the assets directory.',
+        );
       }
 
       const tempXlsx = join(this.tmpDir, `invoice_${uuid()}.xlsx`);
@@ -184,7 +199,9 @@ export class InvoiceService {
       const sheet = workbook.getWorksheet('Invoice');
 
       if (!sheet) {
-        throw new Error("시트 'Invoice'를 찾을 수 없습니다. 엑셀 파일의 시트 이름을 확인하세요.");
+        throw new Error(
+          "시트 'Invoice'를 찾을 수 없습니다. 엑셀 파일의 시트 이름을 확인하세요.",
+        );
       }
 
       // Set today's date in F4
@@ -209,45 +226,45 @@ export class InvoiceService {
 
       // Get the amount and tax rate
       const amount = Number(data.amount);
-      
+
       // Calculate subtotal (F24) - sum of F19 to F23
       // Since we only have F19 with a value, subtotal will be equal to amount
-      const subtotal = amount;  // =SUM(F19:F23)
-      
+      const subtotal = amount; // =SUM(F19:F23)
+
       // Get tax rate from F25
       const taxRate = Number(sheet.getCell('F25').value) || 0;
-      
+
       // Set tax amount (F26) to "-" if no tax, otherwise calculate it
       if (taxRate === 0) {
         const cell = sheet.getCell('F26');
-        cell.value = "-";
+        cell.value = '-';
         cell.alignment = { horizontal: 'right' };
       } else {
         const taxAmount = subtotal * taxRate;
         sheet.getCell('F26').value = taxAmount;
       }
-      
+
       // Set Other section (F27) to "-" with right alignment
       const otherCell = sheet.getCell('F27');
-      otherCell.value = "-";
+      otherCell.value = '-';
       otherCell.alignment = { horizontal: 'right' };
-      
+
       // Calculate total (F28) - when no tax, total is just subtotal
-      const total = taxRate === 0 ? subtotal : subtotal + (subtotal * taxRate);
+      const total = taxRate === 0 ? subtotal : subtotal + subtotal * taxRate;
 
       // Set calculated values
-      sheet.getCell('F24').value = subtotal;  // Subtotal
-      sheet.getCell('F28').value = total;  // Total
+      sheet.getCell('F24').value = subtotal; // Subtotal
+      sheet.getCell('F28').value = total; // Total
 
       // Format amount cells with Japanese number format with 2 decimal places
-      ['F19', 'F24'].forEach(cellRef => {
+      ['F19', 'F24'].forEach((cellRef) => {
         const cell = sheet.getCell(cellRef);
-        cell.numFmt = '#,##0.00';  // Japanese number format with 2 decimal places
+        cell.numFmt = '#,##0.00'; // Japanese number format with 2 decimal places
       });
 
       // Format total with yen sign
       const totalCell = sheet.getCell('F28');
-      totalCell.numFmt = '¥#,##0.00';  // Japanese number format with yen sign
+      totalCell.numFmt = '¥#,##0.00'; // Japanese number format with yen sign
 
       // Format tax amount cell if it has a value
       if (taxRate > 0) {
@@ -256,10 +273,10 @@ export class InvoiceService {
 
       await workbook.xlsx.writeFile(tempXlsx);
       await this.convertToPDF(tempXlsx, tempPdf);
-      
+
       // Clean up the temporary Excel file
       fs.unlinkSync(tempXlsx);
-      
+
       return tempPdf;
     } catch (error) {
       console.error('Error generating invoice:', error);
@@ -269,17 +286,25 @@ export class InvoiceService {
 
   private async convertToPDF(input: string, output: string): Promise<void> {
     const outDir = join(output, '..');
-    const libreOfficePath = '/opt/homebrew/bin/soffice'; // Default Homebrew installation path
-    
+    // const libreOfficePath = '/opt/homebrew/bin/soffice';
+    const libreOfficePath = '/usr/bin/soffice';
+
     return new Promise((resolve, reject) => {
-      exec(`${libreOfficePath} --headless --convert-to pdf ${input} --outdir ${outDir}`, (err) => {
-        if (err) {
-          console.error('LibreOffice conversion error:', err);
-          reject(new Error('PDF conversion failed. Please ensure LibreOffice is installed and accessible.'));
-          return;
-        }
-        resolve();
-      });
+      exec(
+        `${libreOfficePath} --headless --convert-to pdf ${input} --outdir ${outDir}`,
+        (err) => {
+          if (err) {
+            console.error('LibreOffice conversion error:', err);
+            reject(
+              new Error(
+                'PDF conversion failed. Please ensure LibreOffice is installed and accessible.',
+              ),
+            );
+            return;
+          }
+          resolve();
+        },
+      );
     });
   }
 }
