@@ -1,3 +1,5 @@
+import * as http from 'http';
+
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 
@@ -13,6 +15,9 @@ async function bootstrap() {
   });
 
   app.setGlobalPrefix('api');
+
+  const server = app.getHttpServer() as http.Server;
+  server.setTimeout(10 * 60 * 1000);
 
   await app.listen(8000);
 }
